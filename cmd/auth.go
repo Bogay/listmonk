@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/knadh/listmonk/internal/auth"
+	"github.com/knadh/listmonk/internal/audit"
 	"github.com/knadh/listmonk/internal/i18n"
 	"github.com/knadh/listmonk/internal/notifs"
 	"github.com/knadh/listmonk/internal/tmptokens"
@@ -166,6 +167,19 @@ func (a *App) TwofaPage(c echo.Context) error {
 
 // Logout logs a user out.
 func (a *App) Logout(c echo.Context) error {
+	// Get user before session is destroyed
+	user := c.Get(auth.UserHTTPCtxKey).(auth.User)
+
+	// Audit log logout
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &user.ID,
+		Username:     user.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "logout",
+		ResourceType: "user",
+		Status:       "success",
+	})
+
 	// Delete the session from the DB and cookie.
 	sess := c.Get(auth.SessionKey).(*simplesessions.Session)
 	_ = sess.Destroy()
@@ -261,6 +275,17 @@ func (a *App) OIDCFinish(c echo.Context) error {
 	if err := a.core.UpdateUserLogin(user.ID, claims.Picture); err != nil {
 		return a.renderLoginPage(c, err)
 	}
+
+	// Audit log OIDC login
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &user.ID,
+		Username:     user.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "login_oidc",
+		ResourceType: "user",
+		Status:       "success",
+		Context:      map[string]interface{}{"provider": a.cfg.Security.OIDC.ProviderName},
+	})
 
 	// Set the session in the DB and cookie.
 	if err := a.auth.SaveSession(user, oidcToken, c); err != nil {
@@ -452,6 +477,7 @@ func (a *App) doLogin(c echo.Context) error {
 		startTime = time.Now()
 		username  = strings.TrimSpace(c.FormValue("username"))
 		password  = strings.TrimSpace(c.FormValue("password"))
+		userIP    = audit.GetClientIP(c)
 	)
 
 	// Ensure timing mitigation is applied regardless of early returns
@@ -462,17 +488,51 @@ func (a *App) doLogin(c echo.Context) error {
 	}()
 
 	if !strHasLen(username, 3, stdInputMaxLen) {
+		a.auditLog.Log(audit.AuditLog{
+			Username:     username,
+			UserIP:       userIP,
+			Action:       "login",
+			ResourceType: "user",
+			Status:       "failure",
+			ErrorMessage: "invalid username",
+		})
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "username"))
 	}
 	if !strHasLen(password, 8, stdInputMaxLen) {
+		a.auditLog.Log(audit.AuditLog{
+			Username:     username,
+			UserIP:       userIP,
+			Action:       "login",
+			ResourceType: "user",
+			Status:       "failure",
+			ErrorMessage: "invalid password",
+		})
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "password"))
 	}
 
 	// Log the user in by fetching and verifying credentials from the DB.
 	user, err := a.core.LoginUser(username, password)
 	if err != nil {
+		a.auditLog.Log(audit.AuditLog{
+			Username:     username,
+			UserIP:       userIP,
+			Action:       "login",
+			ResourceType: "user",
+			Status:       "failure",
+			ErrorMessage: "invalid credentials",
+		})
 		return err
 	}
+
+	// Log successful login
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &user.ID,
+		Username:     username,
+		UserIP:       userIP,
+		Action:       "login",
+		ResourceType: "user",
+		Status:       "success",
+	})
 
 	// If TOTP is enabled for the user, create a temp token and redirect to the 2FA page.
 	if user.TwofaType == models.TwofaTypeTOTP {
@@ -687,6 +747,16 @@ func (a *App) doResetPassword(c echo.Context, token, email string) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("globals.messages.internalError"))
 	}
 
+	// Audit log password reset
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &user.ID,
+		Username:     user.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "password_reset",
+		ResourceType: "user",
+		Status:       "success",
+	})
+
 	// Log the user in directly without forcing a manual login right after password change.
 	if err := a.auth.SaveSession(user, "", c); err != nil {
 		return err
@@ -736,6 +806,16 @@ func (a *App) doTwofaVerify(c echo.Context, token string, userID int, next strin
 
 	// Invalidate the token.
 	tmptokens.Delete(token)
+
+	// Audit log 2FA verification
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &user.ID,
+		Username:     user.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "twofa_verify",
+		ResourceType: "user",
+		Status:       "success",
+	})
 
 	// Set the session.
 	if err := a.auth.SaveSession(user, "", c); err != nil {

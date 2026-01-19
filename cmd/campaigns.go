@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/knadh/listmonk/internal/audit"
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/notifs"
 	"github.com/knadh/listmonk/models"
@@ -292,6 +293,23 @@ func (a *App) CreateCampaign(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// Log audit entry
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &user.ID,
+		Username:     user.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "campaign_create",
+		ResourceType: "campaign",
+		ResourceID:   &out.ID,
+		ResourceName: out.Name,
+		Status:       "success",
+		Changes: map[string]interface{}{
+			"name":    out.Name,
+			"type":    out.Type,
+			"subject": out.Subject,
+		},
+	})
 
 	return c.JSON(http.StatusOK, okResp{out})
 }

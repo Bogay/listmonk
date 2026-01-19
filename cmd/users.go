@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/knadh/listmonk/internal/audit"
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/core"
 	"github.com/knadh/listmonk/internal/utils"
@@ -90,6 +91,24 @@ func (a *App) CreateUser(c echo.Context) error {
 		return err
 	}
 
+	// Log audit entry
+	authUser := auth.GetUser(c)
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &authUser.ID,
+		Username:     authUser.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "user_create",
+		ResourceType: "user",
+		ResourceID:   &user.ID,
+		ResourceName: user.Email.String,
+		Status:       "success",
+		Changes: map[string]interface{}{
+			"username": user.Username,
+			"email":    user.Email.String,
+			"type":     user.Type,
+		},
+	})
+
 	// Blank out the password hash in the response.
 	if user.Type != auth.UserTypeAPI {
 		user.Password = null.String{}
@@ -165,10 +184,39 @@ func (a *App) UpdateUser(c echo.Context) error {
 	}
 
 	// Update the user in the DB.
+	oldUser, _ := a.core.GetUser(id, "", "")
 	user, err := a.core.UpdateUser(id, u)
 	if err != nil {
 		return err
 	}
+
+	// Audit log user update
+	authUser := auth.GetUser(c)
+	changes := make(map[string]interface{})
+	if oldUser.Username != user.Username {
+		changes["username"] = map[string]interface{}{"before": oldUser.Username, "after": user.Username}
+	}
+	if oldUser.Email.String != user.Email.String {
+		changes["email"] = map[string]interface{}{"before": oldUser.Email.String, "after": user.Email.String}
+	}
+	if oldUser.Status != user.Status {
+		changes["status"] = map[string]interface{}{"before": oldUser.Status, "after": user.Status}
+	}
+	if u.Password.String != "" {
+		changes["password_changed"] = true
+	}
+
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &authUser.ID,
+		Username:     authUser.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "user_update",
+		ResourceType: "user",
+		ResourceID:   &user.ID,
+		ResourceName: user.Email.String,
+		Status:       "success",
+		Changes:      changes,
+	})
 
 	// Blank out the password hash in the response.
 	user.Password = null.String{}
@@ -185,9 +233,26 @@ func (a *App) UpdateUser(c echo.Context) error {
 func (a *App) DeleteUser(c echo.Context) error {
 	// Delete the user(s) from the DB.
 	id := getID(c)
+	
+	// Get user details before deletion for audit log
+	user, _ := a.core.GetUser(id, "", "")
+	
 	if err := a.core.DeleteUsers([]int{id}); err != nil {
 		return err
 	}
+
+	// Log audit entry
+	authUser := auth.GetUser(c)
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &authUser.ID,
+		Username:     authUser.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "user_delete",
+		ResourceType: "user",
+		ResourceID:   &id,
+		ResourceName: user.Email.String,
+		Status:       "success",
+	})
 
 	// Cache the API token for in-memory, off-DB /api/* request auth.
 	if _, err := cacheUsers(a.core, a.auth); err != nil {
@@ -208,6 +273,18 @@ func (a *App) DeleteUsers(c echo.Context) error {
 	if err := a.core.DeleteUsers(ids); err != nil {
 		return err
 	}
+
+	// Audit log bulk delete
+	authUser := auth.GetUser(c)
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &authUser.ID,
+		Username:     authUser.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "user_delete_bulk",
+		ResourceType: "user",
+		Status:       "success",
+		Context:      map[string]interface{}{"count": len(ids)},
+	})
 
 	// Cache the API token for in-memory, off-DB /api/* request auth.
 	if _, err := cacheUsers(a.core, a.auth); err != nil {
@@ -302,6 +379,16 @@ func (a *App) EnableTOTP(c echo.Context) error {
 		return err
 	}
 
+	// Audit log 2FA enable
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &u.ID,
+		Username:     u.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "twofa_enable",
+		ResourceType: "user",
+		Status:       "success",
+	})
+
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
@@ -331,6 +418,16 @@ func (a *App) DisableTOTP(c echo.Context) error {
 	if err := a.core.SetTwoFA(u.ID, models.TwofaTypeNone, ""); err != nil {
 		return err
 	}
+
+	// Audit log 2FA disable
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &u.ID,
+		Username:     u.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "twofa_disable",
+		ResourceType: "user",
+		Status:       "success",
+	})
 
 	return c.JSON(http.StatusOK, okResp{true})
 }

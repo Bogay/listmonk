@@ -146,6 +146,10 @@ type Config struct {
 	BouncePostmarkEnabled     bool
 	BounceForwardemailEnabled bool
 
+	Audit struct {
+		Enabled bool `koanf:"enabled"`
+	} `koanf:"audit"`
+
 	PermissionsRaw json.RawMessage
 	Permissions    map[string]struct{}
 }
@@ -466,6 +470,9 @@ func initConstConfig(ko *koanf.Koanf) *Config {
 	}
 	if err := ko.Unmarshal("security", &c.Security); err != nil {
 		lo.Fatalf("error loading app.security config: %v", err)
+	}
+	if err := ko.Unmarshal("audit", &c.Audit); err != nil {
+		lo.Fatalf("error loading audit config: %v", err)
 	}
 
 	if err := ko.UnmarshalWithConf("appearance", &c.Appearance, koanf.UnmarshalConf{FlatPaths: true}); err != nil {

@@ -23,6 +23,7 @@ import (
 	"github.com/knadh/listmonk/internal/events"
 	"github.com/knadh/listmonk/internal/i18n"
 	"github.com/knadh/listmonk/internal/manager"
+	"github.com/knadh/listmonk/internal/audit"
 	"github.com/knadh/listmonk/internal/media"
 	"github.com/knadh/listmonk/internal/messenger/email"
 	"github.com/knadh/listmonk/internal/subimporter"
@@ -52,6 +53,7 @@ type App struct {
 	events     *events.Events
 	log        *log.Logger
 	bufLog     *buflog.BufLog
+	auditLog   *audit.Logger
 
 	about         about
 	fnOptinNotify func(models.Subscriber, []int) (int, error)
@@ -268,6 +270,7 @@ func main() {
 		log:        lo,
 		events:     evStream,
 		bufLog:     bufLog,
+		auditLog:   audit.New(lo, cfg.Audit.Enabled),
 
 		pg: paginator.New(paginator.Opt{
 			DefaultPerPage: 20,

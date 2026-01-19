@@ -19,6 +19,7 @@ import (
 	koanfjson "github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/knadh/koanf/v2"
+	"github.com/knadh/listmonk/internal/audit"
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/messenger/email"
 	"github.com/knadh/listmonk/internal/notifs"
@@ -291,6 +292,17 @@ func (a *App) UpdateSettings(c echo.Context) error {
 		return err
 	}
 
+	// Log audit entry
+	user := auth.GetUser(c)
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &user.ID,
+		Username:     user.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "settings_update",
+		ResourceType: "settings",
+		Status:       "success",
+	})
+
 	return a.handleSettingsRestart(c)
 }
 
@@ -311,6 +323,18 @@ func (a *App) UpdateSettingsByKey(c echo.Context) error {
 	if err := a.core.UpdateSettingsByKey(key, b); err != nil {
 		return err
 	}
+
+	// Audit log settings update
+	user := auth.GetUser(c)
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &user.ID,
+		Username:     user.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "settings_update_key",
+		ResourceType: "settings",
+		ResourceName: key,
+		Status:       "success",
+	})
 
 	return a.handleSettingsRestart(c)
 }

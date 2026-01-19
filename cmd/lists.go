@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/knadh/listmonk/internal/audit"
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
@@ -108,6 +109,19 @@ func (a *App) CreateList(c echo.Context) error {
 		return err
 	}
 
+	// Audit log list creation
+	user := auth.GetUser(c)
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &user.ID,
+		Username:     user.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "list_create",
+		ResourceType: "list",
+		ResourceID:   &out.ID,
+		ResourceName: out.Name,
+		Status:       "success",
+	})
+
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
@@ -140,6 +154,18 @@ func (a *App) UpdateList(c echo.Context) error {
 		return err
 	}
 
+	// Audit log list update
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &user.ID,
+		Username:     user.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "list_update",
+		ResourceType: "list",
+		ResourceID:   &id,
+		ResourceName: out.Name,
+		Status:       "success",
+	})
+
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
@@ -158,6 +184,17 @@ func (a *App) DeleteList(c echo.Context) error {
 	if err := a.core.DeleteLists([]int{id}, "", true, nil); err != nil {
 		return err
 	}
+
+	// Audit log list deletion
+	a.auditLog.Log(audit.AuditLog{
+		UserID:       &user.ID,
+		Username:     user.Username,
+		UserIP:       audit.GetClientIP(c),
+		Action:       "list_delete",
+		ResourceType: "list",
+		ResourceID:   &id,
+		Status:       "success",
+	})
 
 	return c.JSON(http.StatusOK, okResp{true})
 }
