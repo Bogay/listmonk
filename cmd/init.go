@@ -722,6 +722,7 @@ func initMediaStore(ko *koanf.Koanf) media.Store {
 	case "s3":
 		var o s3.Opt
 		ko.Unmarshal("upload.s3", &o)
+		o.RootURL = ko.String("app.root_url")
 
 		up, err := s3.NewS3Store(o)
 		if err != nil {
