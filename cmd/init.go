@@ -722,7 +722,6 @@ func initMediaStore(ko *koanf.Koanf) media.Store {
 	case "s3":
 		var o s3.Opt
 		ko.Unmarshal("upload.s3", &o)
-		o.RootURL = ko.String("app.root_url")
 
 		up, err := s3.NewS3Store(o)
 		if err != nil {
@@ -915,12 +914,13 @@ func initHTTPServer(cfg *Config, urlCfg *UrlConfig, i *i18n.I18n, fs stuffbin.Fi
 	// Public (subscriber) facing media upload files.
 	if ko.String("upload.provider") == "filesystem" && ko.String("upload.filesystem.upload_uri") != "" {
 		srv.Static(ko.String("upload.filesystem.upload_uri"), ko.String("upload.filesystem.upload_path"))
-	} else if ko.String("upload.provider") == "s3" && ko.String("upload.s3.upload_uri") != "" {
+	} else if ko.String("upload.provider") == "s3" && strings.HasPrefix(ko.String("upload.s3.public_url"), "/") {
 		var opt s3.Opt
 		if err := ko.Unmarshal("upload.s3", &opt); err != nil {
 			lo.Fatalf("error loading s3 upload config: %v", err)
 		}
-		srv.GET(path.Join(opt.UploadUri, "/*"), app.proxyS3Get)
+		publicUrl := strings.TrimRight(opt.PublicURL, "/")
+		srv.GET(path.Join(publicUrl, "/*"), app.proxyS3Get)
 	}
 
 	// Register all HTTP handlers.

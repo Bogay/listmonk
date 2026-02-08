@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/knadh/koanf/v2"
 	"github.com/knadh/listmonk/internal/media"
 	"github.com/rhnvrm/simples3"
 )
@@ -24,26 +23,12 @@ type Opt struct {
 	BucketPath string        `koanf:"bucket_path"`
 	BucketType string        `koanf:"bucket_type"`
 	Expiry     time.Duration `koanf:"expiry"`
-	UploadUri  string        `koanf:"upload_uri"`
-	RootURL    string        `koanf:"root_url"`
 }
 
 // Client implements `media.Store` for S3 provider
 type Client struct {
 	s3   *simples3.S3
 	opts Opt
-}
-
-// UnmarshalOpt unmarshals S3 options from koanf instance.
-func UnmarshalOpt(ko koanf.Koanf) (*Opt, error) {
-	var opt Opt
-	err := ko.Unmarshal("upload.s3", &opt)
-	if err != nil {
-		return nil, err
-	}
-	opt.UploadUri = strings.TrimSuffix(opt.UploadUri, "/")
-	opt.UploadUri = strings.TrimPrefix(opt.UploadUri, "/")
-	return &opt, nil
 }
 
 // NewS3Store initialises store for S3 provider. It takes in the AWS configuration
@@ -173,10 +158,6 @@ func (c *Client) makeBucketPath(name string) string {
 }
 
 func (c *Client) makeFileURL(name string) string {
-	if c.opts.UploadUri != "" {
-		return c.opts.RootURL + strings.TrimRight(c.opts.UploadUri, "/") + "/" + c.makeBucketPath(name)
-	}
-
 	if c.opts.PublicURL != "" {
 		return c.opts.PublicURL + "/" + c.makeBucketPath(name)
 	}
