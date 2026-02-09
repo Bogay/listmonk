@@ -913,15 +913,16 @@ func initHTTPServer(cfg *Config, urlCfg *UrlConfig, i *i18n.I18n, fs stuffbin.Fi
 	srv.GET("/admin/static/*", echo.WrapHandler(fSrv))
 
 	// Public (subscriber) facing media upload files.
-	if ko.String("upload.provider") == "filesystem" && ko.String("upload.filesystem.upload_uri") != "" {
-		srv.Static(ko.String("upload.filesystem.upload_uri"), ko.String("upload.filesystem.upload_path"))
-	} else if ko.String("upload.provider") == "s3" && strings.HasPrefix(ko.String("upload.s3.public_url"), "/") {
-		var opt s3.Opt
-		if err := ko.Unmarshal("upload.s3", &opt); err != nil {
-			lo.Fatalf("error loading s3 upload config: %v", err)
-		}
-		publicUrl := strings.TrimRight(opt.PublicURL, "/")
-		srv.GET(path.Join(publicUrl, "/*"), app.proxyS3Get)
+	var (
+		uploadProvider = ko.String("upload.provider")
+		uploadFsURI    = ko.String("upload.filesystem.upload_uri")
+		publicURL      = ko.String("upload.s3.public_url")
+	)
+	switch {
+	case uploadProvider == "filesystem" && uploadFsURI != "":
+		srv.Static(uploadFsURI, ko.String("upload.filesystem.upload_path"))
+	case uploadProvider == "s3" && strings.HasPrefix(publicURL, "/"):
+		srv.GET(path.Join(publicURL, "/:filepath"), app.ServeS3Media)
 	}
 
 	// Register all HTTP handlers.
